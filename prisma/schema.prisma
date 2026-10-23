@@ -1,0 +1,194 @@
+// En desarrollo usamos SQLite. Para producción cambia el provider a "postgresql"
+// y DATABASE_URL a la cadena de conexión de tu base de datos.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  BASICO
+  COMPLETO
+  PERSONALIZADO
+}
+
+enum RsvpStatus {
+  PENDIENTE
+  CONFIRMADO
+  DECLINADO
+}
+
+enum EventType {
+  BODA
+  XV_ANOS
+  BAUTIZO
+  PRIMERA_COMUNION
+  CUMPLEANOS
+  OTRO
+}
+
+enum ExpenseCategory {
+  LUGAR
+  BANQUETE
+  BEBIDAS
+  MUSICA
+  FOTO_VIDEO
+  DECORACION
+  VESTIMENTA
+  PASTEL
+  INVITACIONES
+  RECUERDOS
+  TRANSPORTE
+  OTROS
+}
+
+enum DesignStatus {
+  RECIBIDO
+  EN_DISENO
+  EN_REVISION
+  APROBADO
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  // Cómo se saluda en el panel, p. ej. "Ana y Luis" o "Familia Ramírez"
+  name         String
+  passwordHash String
+  events       Event[]
+  sessions     Session[]
+  createdAt    DateTime  @default(now())
+}
+
+model Session {
+  // Se guarda el hash del token; el token en claro solo vive en la cookie del navegador
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Template {
+  id          String  @id @default(cuid())
+  slug        String  @unique // coincide con un componente en src/templates
+  name        String
+  description String
+  // Plantillas hechas a mano para un solo evento (servicio personalizado)
+  isCustom    Boolean @default(false)
+  events      Event[]
+}
+
+model Event {
+  id               String          @id @default(cuid())
+  type             EventType       @default(BODA)
+  slug             String          @unique
+  // Identifica el panel en la URL; el acceso lo da la sesión del dueño
+  adminToken       String          @unique
+  userId           String?
+  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // Persona festejada; en una boda, la primera de la pareja
+  honoreeOne       String
+  // Solo en bodas: la segunda persona de la pareja
+  honoreeTwo       String?
+  // Solo en "Otro evento": cómo se llama, p. ej. "Graduación de Ana"
+  title            String?
+  date             DateTime
+  ceremonyVenue    String
+  ceremonyAddress  String
+  ceremonyTime     String
+  receptionVenue   String?
+  receptionAddress String?
+  receptionTime    String?
+  dressCode        String?
+  message          String?
+  giftRegistry     String?
+  // Canción que suena al abrir el sobre (archivo en /public o URL externa)
+  musicUrl         String?
+  rsvpDeadline     DateTime?
+  plan             Plan            @default(BASICO)
+  templateId       String
+  template         Template        @relation(fields: [templateId], references: [id])
+  // Presupuesto total en centavos (MXN); el dinero se guarda en enteros para que las sumas sean exactas
+  budgetCents      Int?
+  // Plano del salón (medidas, mesas con sus sillas, elementos) en JSON; ver src/lib/floor-plan/types.ts
+  floorPlan        String?
+  guests           Guest[]
+  tables           EventTable[]
+  expenses         Expense[]
+  designRequests   DesignRequest[]
+  createdAt        DateTime        @default(now())
+
+  @@index([userId])
+}
+
+model EventTable {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // Ej. "Mesa 1" o "Familia de la novia"
+  name      String
+  capacity  Int      @default(10)
+  guests    Guest[]
+  createdAt DateTime @default(now())
+
+  @@index([eventId])
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  eventId     String
+  event       Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  category    ExpenseCategory @default(OTROS)
+  // Ej. "Renta del salón"
+  concept     String
+  vendor      String?
+  // Costo total y lo que ya se pagó, en centavos
+  amountCents Int
+  paidCents   Int             @default(0)
+  dueDate     DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@index([eventId])
+}
+
+model Guest {
+  id          String      @id @default(cuid())
+  eventId     String
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tableId     String?
+  table       EventTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  // Ej. "Familia Pérez" o "Mariana López"
+  name        String
+  phone       String?
+  seats       Int         @default(1)
+  token       String      @unique
+  status      RsvpStatus  @default(PENDIENTE)
+  attending   Int?
+  dietary     String?
+  message     String?
+  respondedAt DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@index([eventId])
+  @@index([tableId])
+}
+
+model DesignRequest {
+  id         String       @id @default(cuid())
+  eventId    String
+  event      Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  style      String
+  colors     String
+  references String?
+  notes      String?
+  status     DesignStatus @default(RECIBIDO)
+  createdAt  DateTime     @default(now())
+
+  @@index([eventId])
+}
